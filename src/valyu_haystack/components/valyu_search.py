@@ -15,10 +15,6 @@ logger = logging.getLogger(__name__)
 SearchType = Literal["web", "proprietary", "all"]
 
 
-class ValyuSearchError(ComponentError):
-    """Exception raised when an error occurs in ValyuSearch."""
-
-
 @component
 class ValyuSearch:
     """
@@ -92,65 +88,59 @@ class ValyuSearch:
         """
         Calls the Valyu DeepSearch API using the Valyu SDK.
         """
-        try:
-            # Use the Valyu SDK's search method with input validation
-            response = self.valyu_client.search(
-                query=query,
-                search_type=self.search_type,
-                max_num_results=self.top_k,
-                is_tool_call=True,
-                relevance_threshold=self.relevance_threshold,
-                max_price=self.max_price,
-            )
+        # Use the Valyu SDK's search method with input validation
+        response = self.valyu_client.search(
+            query=query,
+            search_type=self.search_type,
+            max_num_results=self.top_k,
+            is_tool_call=True,
+            relevance_threshold=self.relevance_threshold,
+            max_price=self.max_price,
+        )
 
-            # Check if the request was successful
-            if not response.success:
-                error_msg = response.error or "Unknown error"
-                raise ValyuSearchError(f"Valyu API returned error: {error_msg}")
+        # Check if the request was successful
+        if not response.success:
+            error_msg = response.error or "Unknown error"
+            raise ComponentError(f"Valyu API returned error: {error_msg}")
 
-            # Parse the SearchResponse format
-            documents = []
-            for result in response.results:
-                # Handle both string and structured content
-                content = result.content
-                if isinstance(content, list):
-                    # If content is structured (list of dicts), convert to string
-                    content = "\n".join(
-                        [
-                            f"{item.get('key', '')}: {item.get('value', '')}"
-                            for item in content
-                            if isinstance(item, dict)
-                        ]
-                    )
-
-                doc = Document(
-                    content=str(content),
-                    meta={
-                        "title": result.title,
-                        "url": result.url,
-                        "description": result.description or "",
-                        "source": result.source,
-                        "relevance_score": result.relevance_score,
-                        "price": result.price,
-                        "length": result.length,
-                        "data_type": result.data_type,
-                        "image_url": result.image_url,
-                    },
+        # Parse the SearchResponse format
+        documents = []
+        for result in response.results:
+            # Handle both string and structured content
+            content = result.content
+            if isinstance(content, list):
+                # If content is structured (list of dicts), convert to string
+                content = "\n".join(
+                    [
+                        f"{item.get('key', '')}: {item.get('value', '')}"
+                        for item in content
+                        if isinstance(item, dict)
+                    ]
                 )
-                documents.append(doc)
 
-            logger.debug(
-                "ValyuSearch returned {number_documents} documents for the query '{query}'",
-                number_documents=len(documents),
-                query=query,
+            doc = Document(
+                content=str(content),
+                meta={
+                    "title": result.title,
+                    "url": result.url,
+                    "description": result.description or "",
+                    "source": result.source,
+                    "relevance_score": result.relevance_score,
+                    "price": result.price,
+                    "length": result.length,
+                    "data_type": result.data_type,
+                    "image_url": result.image_url,
+                },
             )
+            documents.append(doc)
 
-            return documents
+        logger.debug(
+            "ValyuSearch returned {number_documents} documents for the query '{query}'",
+            number_documents=len(documents),
+            query=query,
+        )
 
-        except Exception as e:
-            raise ValyuSearchError(
-                f"An error occurred while querying {self.__class__.__name__}. Error: {e}"
-            ) from e
+        return documents
 
     @component.output_types(documents=List[Document], links=List[str])
     def run(self, query: str) -> Dict[str, Any]:
@@ -161,8 +151,6 @@ class ValyuSearch:
         :returns: A dictionary with the following keys:
             - "documents": List of documents returned by the search.
             - "links": List of URLs returned by the search.
-        :raises ValyuSearchError: If an error occurs while querying the Valyu API.
-        :raises TimeoutError: If the request to the Valyu API times out.
         """
         if not query or not query.strip():
             logger.warning("Received empty query, returning no results")

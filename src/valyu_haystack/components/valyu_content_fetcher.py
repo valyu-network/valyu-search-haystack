@@ -16,10 +16,6 @@ ExtractEffort = Literal["normal", "high", "auto"]
 ContentsResponseLength = Union[Literal["short", "medium", "large", "max"], int]
 
 
-class ValyuContentFetcherError(ComponentError):
-    """Exception raised when an error occurs in ValyuContentFetcher."""
-
-
 @component
 class ValyuContentFetcher:
     """
@@ -95,52 +91,46 @@ class ValyuContentFetcher:
         Calls the Valyu Contents API using the Valyu SDK.
         Note: The Contents API accepts multiple URLs (max 10) per request.
         """
-        try:
-            # Use the Valyu SDK's contents method with input validation
-            response = self.valyu_client.contents(
-                urls=urls,
-                summary=self.summary,
-                extract_effort=self.extract_effort,
-                response_length=self.response_length,
-            )
+        # Use the Valyu SDK's contents method with input validation
+        response = self.valyu_client.contents(
+            urls=urls,
+            summary=self.summary,
+            extract_effort=self.extract_effort,
+            response_length=self.response_length,
+        )
 
-            # Check if the request was successful
-            if not response.success:
-                error_msg = response.error or "Unknown error"
-                raise ValyuContentFetcherError(f"Valyu API returned error: {error_msg}")
+        # Check if the request was successful
+        if not response.success:
+            error_msg = response.error or "Unknown error"
+            raise ComponentError(f"Valyu API returned error: {error_msg}")
 
-            # Parse the ContentsResponse format
-            documents = []
-            for result in response.results:
-                # Handle different content types (str, int, float)
-                content = result.content
-                if not isinstance(content, str):
-                    content = str(content)
+        # Parse the ContentsResponse format
+        documents = []
+        for result in response.results:
+            # Handle different content types (str, int, float)
+            content = result.content
+            if not isinstance(content, str):
+                content = str(content)
 
-                # Prepare metadata
-                meta = {
-                    "url": result.url,
-                    "title": result.title,
-                    "length": result.length,
-                    "source": result.source,
-                    "data_type": result.data_type,
-                }
+            # Prepare metadata
+            meta = {
+                "url": result.url,
+                "title": result.title,
+                "length": result.length,
+                "source": result.source,
+                "data_type": result.data_type,
+            }
 
-                doc = Document(content=content, meta=meta)
-                documents.append(doc)
+            doc = Document(content=content, meta=meta)
+            documents.append(doc)
 
-            logger.debug(
-                "ValyuContentFetcher returned {number_documents} documents for {number_urls} URLs",
-                number_documents=len(documents),
-                number_urls=len(urls),
-            )
+        logger.debug(
+            "ValyuContentFetcher returned {number_documents} documents for {number_urls} URLs",
+            number_documents=len(documents),
+            number_urls=len(urls),
+        )
 
-            return documents
-
-        except Exception as e:
-            raise ValyuContentFetcherError(
-                f"An error occurred while querying {self.__class__.__name__}. Error: {e}"
-            ) from e
+        return documents
 
     @component.output_types(documents=List[Document])
     def run(
@@ -153,8 +143,6 @@ class ValyuContentFetcher:
         :param urls: List of URLs to fetch content from
         :param documents: List of Documents with URLs in their metadata
         :returns: Dictionary with 'documents' key containing list of Document objects with extracted content
-        :raises ValyuContentFetcherError: If an error occurs while querying the Valyu API.
-        :raises TimeoutError: If the request to the Valyu API times out.
         """
 
         # Remove duplicates while preserving order
@@ -172,9 +160,7 @@ class ValyuContentFetcher:
                 docs = self._call_api(batch)
                 fetched_documents.extend(docs)
             except Exception as e:
-                logger.warning(
-                    f"Failed to fetch content for batch {i//10 + 1}: {str(e)}"
-                )
+                logger.warning(f"Failed to fetch content for batch {i//10 + 1}: {str(e)}")
                 continue
 
         return {"documents": fetched_documents}
