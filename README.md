@@ -5,11 +5,11 @@ description: Search and content extraction components using Valyu's API for web 
 authors:
   - name: Valyu
     socials:
-      github: valyu
+      github: valyu-network
 pypi: https://pypi.org/project/valyu-search-haystack
-repo: https://github.com/valyu/valyu-search-haystack
+repo: https://github.com/valyu-network/valyu-search-haystack
 type: Search & Content Extraction
-report_issue: https://github.com/valyu/valyu-search-haystack/issues
+report_issue: https://github.com/valyu-network/valyu-search-haystack/issues
 version: Haystack 2.0
 toc: true
 ---
@@ -21,14 +21,10 @@ toc: true
 - [Usage](#usage)
   - [ValyuSearch](#valyusearch)
   - [ValyuContentFetcher](#valyucontentfetcher)
-  - [RAG Pipeline Example](#rag-pipeline-example)
-  - [Combined Search and Content Fetching](#combined-search-and-content-fetching)
+  - [Pipeline Examples](#pipeline-examples)
   - [Advanced Configuration](#advanced-configuration)
-- [Examples](#examples)
 - [API Integration Details](#api-integration-details)
   - [Authentication](#authentication)
-  - [Endpoints](#endpoints)
-  - [Error Handling](#error-handling)
   - [License](#license)
 
 ## Overview
@@ -187,93 +183,76 @@ documents = result["fetcher"]["documents"]
 - `source`: Data source identifier
 - `data_type`: Type of content
 
-### RAG Pipeline Example
+### Pipeline Examples
 
-Combine `ValyuSearch` with other Haystack components to build a complete RAG pipeline:
+**RAG Pipeline with Search and Chat:**
 
 ```python
-from valyu_haystack import ValyuSearch
 from haystack import Pipeline
-from haystack.components.generators import OpenAIGenerator
-from haystack.components.builders import PromptBuilder
 from haystack.utils import Secret
+from haystack.components.builders.chat_prompt_builder import ChatPromptBuilder
+from haystack.components.generators.chat import OpenAIChatGenerator
+from haystack.dataclasses import ChatMessage
+from valyu_haystack import ValyuSearch
 
 # Create components
-search = ValyuSearch(top_k=5)
-prompt_builder = PromptBuilder(template="""
-Answer the question based on the following context:
+web_search = ValyuSearch(top_k=3)
 
-Context:
-{% for doc in documents %}
-{{ doc.content }}
-{% endfor %}
+prompt_template = [
+    ChatMessage.from_system("You are a helpful assistant."),
+    ChatMessage.from_user(
+        "Given the information below:\n"
+        "{% for document in documents %}{{ document.content }}{% endfor %}\n"
+        "Answer question: {{ query }}.\nAnswer:"
+    )
+]
 
-Question: {{ query }}
-Answer:
-""")
-generator = OpenAIGenerator(api_key=Secret.from_env_var("OPENAI_API_KEY"))
+prompt_builder = ChatPromptBuilder(template=prompt_template, required_variables={"query", "documents"})
+llm = OpenAIChatGenerator(api_key=Secret.from_env_var("OPENAI_API_KEY"), model="gpt-3.5-turbo")
 
 # Build pipeline
-pipeline = Pipeline()
-pipeline.add_component("search", search)
-pipeline.add_component("prompt", prompt_builder)
-pipeline.add_component("llm", generator)
+pipe = Pipeline()
+pipe.add_component("search", web_search)
+pipe.add_component("prompt_builder", prompt_builder)
+pipe.add_component("llm", llm)
 
 # Connect components
-pipeline.connect("search.documents", "prompt.documents")
-pipeline.connect("prompt.prompt", "llm.prompt")
+pipe.connect("search.documents", "prompt_builder.documents")
+pipe.connect("prompt_builder.messages", "llm.messages")
 
-# Run RAG pipeline
-result = pipeline.run({
-    "search": {"query": "What is Haystack?"},
-    "prompt": {"query": "What is Haystack?"}
-})
-
-answer = result["llm"]["replies"][0]
+# Run pipeline
+query = "What is the most famous landmark in Berlin?"
+result = pipe.run(data={"search": {"query": query}, "prompt_builder": {"query": query}})
 ```
 
-### Combined Search and Content Fetching
-
-Since `ValyuSearch` already returns content, `ValyuContentFetcher` is typically used for additional URLs or re-fetching with different parameters:
+**Indexing Pipeline with Content Fetcher:**
 
 ```python
-from valyu_haystack import ValyuSearch, ValyuContentFetcher
 from haystack import Pipeline
+from haystack.document_stores.in_memory import InMemoryDocumentStore
+from haystack.components.writers import DocumentWriter
+from valyu_haystack import ValyuContentFetcher
 
 # Create components
-search = ValyuSearch(top_k=3)
-fetcher = ValyuContentFetcher(
-    extract_effort="high",  # More thorough extraction
-    summary=True  # Add AI summaries
-)
+document_store = InMemoryDocumentStore()
+fetcher = ValyuContentFetcher()
+writer = DocumentWriter(document_store=document_store)
 
-# Create pipeline
-pipeline = Pipeline()
-pipeline.add_component("search", search)
-pipeline.add_component("fetcher", fetcher)
+# Build indexing pipeline
+indexing_pipeline = Pipeline()
+indexing_pipeline.add_component(instance=fetcher, name="fetcher")
+indexing_pipeline.add_component(instance=writer, name="writer")
 
-# Connect - fetcher will re-fetch content with enhanced extraction
-pipeline.connect("search.documents", "fetcher.documents")
+# Connect components
+indexing_pipeline.connect("fetcher.documents", "writer.documents")
 
-result = pipeline.run({"search": {"query": "machine learning"}})
-enhanced_documents = result["fetcher"]["documents"]
+# Run pipeline
+indexing_pipeline.run(data={
+    "fetcher": {"urls": ["https://haystack.deepset.ai/blog/guide-to-using-zephyr-with-haystack2"]}
+})
 ```
 
 ### Advanced Configuration
-
-**Using explicit API key:**
-
-```python
-from haystack.utils import Secret
-from valyu_haystack import ValyuSearch
-
-search = ValyuSearch(
-    api_key=Secret.from_token("your-api-key"),
-    top_k=10,
-    search_type="proprietary",  # Search only proprietary sources
-    relevance_threshold=0.7  # Higher relevance threshold
-)
-```
 
 **Structured data extraction with Content Fetcher:**
 
@@ -297,24 +276,6 @@ result = fetcher.run(urls=["https://example.com/article"])
 # Extracted structured data will be in document metadata
 ```
 
-## Examples
-
-Check out the `examples/` directory for more detailed examples:
-
-- `basic_search.py` - Simple search example
-- `search_with_content_fetcher.py` - Using both components together
-- `rag_pipeline.py` - Building a RAG pipeline with mock LLM
-- `standalone_content_fetcher.py` - Using content fetcher independently
-- `real_api_example.py` - Additional search API example
-- `real_content_api_example.py` - Additional content API example
-
-Run examples:
-
-```bash
-export VALYU_API_KEY="your-api-key"
-python examples/basic_search.py
-```
-
 ## API Integration Details
 
 ### Authentication
@@ -323,19 +284,6 @@ Both components use Haystack's `Secret` class for secure API key management:
 
 - Header: `x-api-key: your-api-key`
 - Environment variable: `VALYU_API_KEY`
-
-### Endpoints
-
-- **Search:** `https://api.valyu.network/v1/deepsearch`
-- **Contents:** `https://api.valyu.network/v1/contents`
-
-### Error Handling
-
-Components raise specific exceptions:
-
-- `ValyuSearchError`: Errors from the search API
-- `ValyuContentFetcherError`: Errors from the content API
-- `TimeoutError`: Request timeouts
 
 ### License
 

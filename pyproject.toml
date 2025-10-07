@@ -4,11 +4,11 @@ build-backend = "hatchling.build"
 
 [project]
 name = "valyu-search-haystack"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Haystack components for integrating Valyu's search and content extraction APIs"
 readme = "README.md"
 requires-python = ">=3.8"
-license = "Apache-2.0"
+license = {file = "LICENSE"}
 keywords = ["haystack", "valyu", "search", "content-extraction", "rag", "llm"]
 authors = [
     { name = "Valyu", email = "support@valyu.com" }
@@ -41,9 +41,9 @@ dev = [
 ]
 
 [project.urls]
-Documentation = "https://github.com/valyu/valyu-search-haystack#readme"
-Issues = "https://github.com/valyu/valyu-search-haystack/issues"
-Source = "https://github.com/valyu/valyu-search-haystack"
+Documentation = "https://github.com/valyu-network/valyu-search-haystack#readme"
+Issues = "https://github.com/valyu-network/valyu-search-haystack/issues"
+Source = "https://github.com/valyu-network/valyu-search-haystack"
 
 [tool.hatch.version]
 path = "src/valyu_haystack/__about__.py"
@@ -57,6 +57,9 @@ include = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/valyu_haystack"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.black]
 target-version = ["py38"]
